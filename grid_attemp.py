@@ -4,115 +4,16 @@ Created on Mon Jun 22 00:08:57 2020
 
 @author: xuanh
 """
-
 import numpy as np
-import math
+import math, copy
+from grispy import GriSPy
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-white')
 
-R = float(5)
+R = 7.5
+fn = 0
 ##
-def condition1(point, neighbor, ix, data):
-    k = data['bound'] - data['box']
-    if point[ix] - R < 0:
-        A = ((np.all(neighbor[ix] >= 0) and np.all(point[ix] + R >= neighbor[ix])) or \
-            (np.all(point[ix] - R + k[ix] <= neighbor[ix]) and np.all(neighbor[ix] < k[ix])))
-        return A
-    elif point[ix] + R - k[ix] >= 0:
-        A = ((np.all(point[ix] - R <= neighbor[ix]) and np.all(neighbor[ix] < k[ix])) or \
-            (np.all(neighbor[ix] >= 0) and np.all(point[ix] + R - k[ix] >= neighbor[ix])))
-        return A
-    else:
-        A = (np.all(point[ix] - R <= neighbor[ix]) and np.all(point[ix] + R >= neighbor[ix]))
-        return A
-
-##
-def condition2(point, i, ix, data):
-    k1 = data['bound'] - data['box']
-    if point[ix] - R < 0 and point[ix] - R + k1[ix] - i[ix] <= 0 < k1[ix] - i[ix]:
-        return -1
-    elif point[ix] + R - k1[ix] >= 0 and -i[ix] <= 0 <= point[ix] + R - k1[ix] - i[ix]:
-        return 1
-    else:
-        return 0
-
-##
-def search(v_index, ix, data, vector1):
-    # Sorting
-    vector1.sort(key=lambda x: x[0][ix])
-    k = []
-    for i in vector1:
-        k.append(i[2])
-    k1 = k.index(v_index)
-    k2 = round(len(vector1)*0.5)
-    if k2 > k1:
-        k3 = vector1[(k1-k2):].copy()
-        del vector1[(k1-k2):]
-        for i in range(len(k3)):
-            vector1.insert(0, k3[-(i+1)])
-        k1 += len(k3)
-    elif k2 < k1:
-        k3 = vector1[:(k1-k2)].copy()
-        del vector1[:(k1-k2)]
-        vector1.append(k3)
-        k1 -= len(k3)
-    # Searching
-    vector2 = []
-    for i in [1, -1]:
-        k2 = 1
-        j = condition1(vector1[k1][0], vector1[k1 + k2*i][0], ix, data)
-        while j:
-            vector2.append(vector1[k1 + k2*i])
-            k2 += 1
-            j = condition1(vector1[k1][0], vector1[k1 + k2*i][0], ix, data)
-    if ix != 2:
-        vector2.append(vector1[k1])
-    return vector2
-
-##Griding
-dimension = (round((data['bound'][i]-data['box'][i])/R)+1 for i in range(3))
-grid = []
-for i1 in range(dimension[0]):
-    grid.append([])
-    for i2 in range(dimension[1]):
-        grid[i1].append([])
-        for i3 in range(dimension[2]):
-            grid[i1][i2].append([])
-for i1 in range(dimension[0]):
-    for i2 in range(dimension[1]):
-        for i3 in range(dimension[2]):
-            for i in vector:
-
-##
-def density(v_index, data, vector):
-    dump = []
-    vector1 = vector.copy()
-    for i in range(len(vector1)):
-        vector1[i].append(i)
-    # x-dimension
-    vector_x = search(v_index, 0, data, vector1)
-    # y-dimension
-    vector_y = search(v_index, 1, data, vector_x)
-    # z-dimension
-    vector_z = search(v_index, 2, data, vector_y)
-    for i in vector_z:
-        k = [condition2(vector[v_index][0], i[0], ix, data) for ix in range(3)]
-        k = vector[v_index][0] - i[0] - k*(data['bound']-data['box'])
-        k = np.linalg.norm(k)
-        if k <= R:
-            dump.append(i)
-    D = 0
-    if len(dump) != 0:
-        for i in dump:
-            unit_point = vector[v_index][1]/np.linalg.norm(vector[v_index][1])
-            unit_i = i[1]/np.linalg.norm(i[1])
-            angle = np.arccos(np.dot(unit_point, unit_i))
-            angle = angle*180/math.pi
-            if angle >= 90:
-                angle -= 90
-            D += 1/np.linalg.norm(vector[v_index][0]-i[0])*angle/90
-    return D
-
-##
-with open('dump.comp_0.cfg', 'r') as dump:
+with open('dump.comp_%d.cfg' % fn, 'r') as dump:
     data = dict()
     data['box'] = []
     data['bound'] = []
@@ -149,11 +50,11 @@ with open('dump.comp_0.cfg', 'r') as dump:
             elif x2 == 4:
                 data['data'].append(np.asarray([float(i) for i in x], dtype='f4'))
 
-post_data = data['data'].copy()
+post_data = copy.copy(data['data'])
 for i in range(data['nums_of_atoms']):
     post_data[i][3:] -= data['box']
 post_data.sort(key=lambda x: x[0])
-molecule, vector_z = [], []
+molecule, vector, vector_np = [], [], []
 x = 1
 for i in post_data:
     if i[1] == x:
@@ -161,28 +62,155 @@ for i in post_data:
         molecule.append([i])
     else:
         molecule[x-2].append(i)
-
+k1 = data['bound'] - data['box']
 for i in molecule:
-    for j in range(len(i)):
-        if j != 0 and j != len(i)-1:
-            k = np.zeros((3,3), dtype=int)
-            k1 = data['bound'] - data['box']
-            for x in range(3):
-                if abs(i[j+1][x+3]-i[j-1][x+3]) > k1[x]*0.5:
-                    if i[j-1][x+3] < k1[x]*0.5:
-                        k[0][x] = 1
-                    if i[j][x+3] < k1[x]*0.5:
-                        k[1][x] = 1
-                    if i[j+1][x+3] < k1[x]*0.5:
-                        k[2][x] = 1
-            k2 = (i[j-1][3:] + i[j][3:] + i[j+1][3:] + (k[0]+k[1]+k[2])*k1[x])*0.33333
-            for x in range(3):
-                if k2[x] >= k1[x]:
-                    k2[x] -= k1[x]
-            vector.append([k2, i[j+1][3:]-i[j-1][3:]])
+    for j in range(1, len(i)-1):
+        k = np.zeros((3,3), dtype=int)
+        for x in range(3):
+            if abs(i[j+1][x+3]-i[j-1][x+3]) > k1[x]*0.5:
+                if i[j-1][x+3] < k1[x]*0.5:
+                    k[0][x] = 1
+                elif i[j+1][x+3] < k1[x]*0.5:
+                    k[2][x] = 1
+                if i[j][x+3] < k1[x]*0.5:
+                    k[1][x] = 1
+        k2 = (i[j-1][3:] + i[j][3:] + i[j+1][3:] + (k[0,:]+k[1,:]+k[2,:])*k1)*0.33333
+        for x in range(3):
+            if k2[x] >= k1[x]:
+                k2[x] -= k1[x]
+        vector.append([k2, (i[j+1][3:]-i[j-1][3:]+k[0,:]*k1[0]-k[2,:]*k1[2])])
+        vector_np.append(k2)
 
-density_map = np.zeros(len(vector), 4)
-for j in range(len(vector)):
-    print(j)
-    density_map[j][:3] = vector[j][0].copy()
-    density_map[j][3] = density(j, data, vector)
+vector_np = np.array(vector_np)
+periodic = {0: (0, float(k1[0])), 1: (0, float(k1[1])), 2: (0, float(k1[2]))}
+gsp = GriSPy(vector_np)
+gsp.set_periodicity(periodic)
+bubble_dist, bubble_ind = gsp.bubble_neighbors(vector_np, distance_upper_bound=R)
+density_map = np.zeros((len(vector), 4), dtype=float)
+for i in range(len(vector)):
+    D = 0
+    print(i)
+    for j in range(len(bubble_ind[i])):
+        if bubble_ind[i][j] != i:
+            unit_point = vector[i][1]/np.linalg.norm(vector[i][1])
+            unit_neighbor = vector[bubble_ind[i][j]][1]/np.linalg.norm(vector[bubble_ind[i][j]][1])
+            dot = np.dot(unit_point, unit_neighbor)
+            if dot > 1:
+                dot = 1
+            elif dot < -1:
+                dot = -1
+            factor = 1
+            if 0 <= abs(j-i) < 3:
+                fator = (abs(j-i)/3)**2
+            angle = np.arccos(dot)
+            angle = angle*180/math.pi
+            if angle >= 90:
+                angle -= 90
+            D += (5.01/bubble_dist[i][j])*(1-angle/90)*factor
+    density_map[i,:3] = copy.copy(vector_np[i])
+    density_map[i,3] = D
+d_min = np.amin(density_map[:,3])
+d_max = np.amax(density_map[:,3])
+density_map[:,3] = ((density_map[:,3]-d_min)/(d_max-d_min))
+
+## x-z plane
+xz_map_dump = []
+xz = list(range(len(density_map)))
+i = 0
+if len(density_map[:,0]) == len(set(density_map[:,0])) and \
+   len(density_map[:,2]) == len(set(density_map[:,2])):
+        while True:
+            xz_duplicate = []
+            print(xz[0])
+            for j in xz:
+                k = 0
+                if j != i and \
+                   density_map[i,0] == density_map[j,0] and \
+                   density_map[i,2] == density_map[j,2]:
+                       if k == 0:
+                           xz_duplicate.append([i])
+                           k += 1
+                       xz_duplicate[-1].append(j)
+            xz_map_dump.append(density_map[i])
+            if len(xz_duplicate) != 0:
+                for j in range(1, len(xz_duplicate)):
+                    xz_map_dump[-1][3] += density_map[j,3]
+                for j in xz_duplicate:
+                    del xz[xz.index(j)]
+            else:
+                del xz[xz.index(i)]
+            if len(xz) != 0:
+                i = xz[0]
+            else:
+                break
+        xz_map = copy.copy(np.array(xz_map_dump))
+        del xz_map_dump, xz_duplicate
+else:
+    xz_map = copy.copy(density_map)
+xz_map[:,1] = 0
+
+## y-z plane
+yz_map_dump = []
+yz = list(range(len(density_map)))
+i = 0
+if len(density_map[:,1]) == len(set(density_map[:,1])) and \
+   len(density_map[:,2]) == len(set(density_map[:,2])):
+        while True:
+            yz_duplicate = []
+            print(yz[0])
+            for j in yz:
+                k = 0
+                if j != i and \
+                   density_map[i,1] == density_map[j,1] and \
+                   density_map[i,2] == density_map[j,2]:
+                       if k == 0:
+                           yz_duplicate.append([i])
+                           k += 1
+                       yz_duplicate[-1].append(j)
+            yz_map_dump.append(density_map[i])
+            if len(yz_duplicate) != 0:
+                for j in range(1, len(yz_duplicate)):
+                    yz_map_dump[-1][3] += density_map[j,3]
+                for j in yz_duplicate:
+                    del yz[yz.index(j)]
+            else:
+                del yz[yz.index(i)]
+            if len(yz) != 0:
+                i = yz[0]
+            else:
+                break
+        yz_map = copy.copy(np.array(yz_map_dump))
+        del yz_map_dump, yz_duplicate
+else:
+    yz_map = copy.copy(density_map)
+yz_map[:,0] = 0
+
+####################################### Plot
+fig, (ax1, ax2) = plt.subplots(ncols=2, dpi=300)
+
+# ----------
+# Tricontour
+# ----------
+# Directly supply the unordered, irregularly spaced coordinates
+# to tricontour.
+
+# XZ POV
+ax1.tricontour(xz_map[:,0], xz_map[:,2], xz_map[:,3], levels=14, linewidths=0.5, colors='k')
+cntr1 = ax1.tricontourf(xz_map[:,0], xz_map[:,2], xz_map[:,3], levels=14, cmap="RdBu_r")
+fig.colorbar(cntr1, ax=ax1)
+#ax1.plot(xz_map[:,0], xz_map[:,2], 'ko', ms=3)          % reference points
+ax1.set(xlim=(0, float(k1[0])), ylim=(0, float(k1[2])))
+ax1.set_title('xz POV')
+
+#YZ POV
+ax2.tricontour(yz_map[:,1], yz_map[:,2], yz_map[:,3], levels=14, linewidths=0.5, colors='k')
+cntr2 = ax2.tricontourf(yz_map[:,1], yz_map[:,2], yz_map[:,3], levels=14, cmap="RdBu_r")
+fig.colorbar(cntr2, ax=ax2)
+#ax2.plot(yz_map[:,0], yz_map[:,2], 'ko', ms=3)          % reference points
+ax2.set(xlim=(0, float(k1[1])), ylim=(0, float(k1[2])))
+ax2.set_title('yz POV')
+
+#
+plt.subplots_adjust(hspace=0.5)
+plt.savefig('%d.png' % fn)
+plt.show()
